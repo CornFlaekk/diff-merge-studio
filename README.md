@@ -1,12 +1,12 @@
-# Entre líneas
+# DIFF Studio
 
-Aplicación estática en español para comparar dos textos, revisar diferencias por bloques, escoger qué versión conservar en cada cambio y descargar el resultado junto con notas de revisión.
+Aplicación estática en español para comparar dos textos, revisar diferencias por bloques, escoger qué versión conservar en cada cambio y descargar o copiar el resultado final. Incluye navegación entre cambios y un minimapa de sus posiciones para recorrer archivos largos.
 
 ## Privacidad
 
-- La comparación, las decisiones y las notas se procesan en el navegador; el código de la app no envía el contenido a un servidor ni lo guarda en almacenamiento persistente.
+- La comparación y las decisiones se procesan en el navegador; el código de la app no envía el contenido a un servidor ni lo guarda en almacenamiento persistente.
 - Los archivos se leen localmente. La aplicación rechaza archivos mayores de 2 MB cada uno, textos pegados que superen 4 MB en conjunto, contenido con bytes NUL y archivos que no sean UTF-8 válido.
-- Las descargas se crean localmente. No se necesitan cuentas, API ni servicios externos.
+- Las descargas y la copia al portapapeles se realizan localmente. No se necesitan cuentas, API ni servicios externos.
 - No se hacen solicitudes a terceros: también se usan tipografías del sistema, sin Google Fonts.
 
 ## Desarrollo y pruebas
@@ -34,7 +34,7 @@ El sitio estático se sirve desde la carpeta `/docs` de la rama `main`; el build
 
 1. Ejecuta `npm ci`, `npm test` y `npm run build`.
 2. En el repositorio, abre **Settings → Pages** y selecciona **Deploy from a branch**, rama `main`, carpeta `/docs`.
-3. Confirma que GitHub Pages queda habilitado. La URL será `https://CornFlaekk.github.io/diff-merge-studio/`.
+3. Confirma que GitHub Pages queda habilitado. La URL es `https://CornFlaekk.github.io/diff-studio/`.
 
 Para actualizar el sitio, compila de nuevo y confirma en Git los cambios de código y de `docs/`. El despliegue no necesita un workflow de Actions.
 
@@ -43,13 +43,11 @@ Para actualizar el sitio, compila de nuevo y confirma en Git los cambios de cód
 - “Texto” significa UTF-8; archivos binarios y codificaciones distintas de UTF-8 se rechazan en vez de interpretarse.
 - Cada bloque contiguo de líneas diferentes es una decisión independiente. Las líneas idénticas que separan bloques se conservan automáticamente.
 - Un cambio que no se ha resuelto se omite de la vista previa combinada; la descarga final permanece deshabilitada hasta resolver todos los cambios.
-- Las notas son optativas, existen solo mientras la pestaña está abierta y se exportan por separado como Markdown.
 - No hay almacenamiento local/sesión, telemetría, analítica ni sincronización.
 - La aplicación estática no realiza solicitudes de red desde el navegador; sus recursos y dependencias están empaquetados localmente.
 
-## Próximas mejoras
+## Navegación
 
-- Navegación entre cambios y atajos de teclado para aceptar original/nueva.
-- Vista de contexto configurable y comparación más precisa de espacios en blanco.
-- Exportación conjunta del texto combinado y las notas en un paquete descargable.
-- Pruebas de interfaz en navegador y auditoría automatizada de accesibilidad.
+- Usa «Anterior» y «Siguiente» para saltar entre los cambios; la posición actual y el número de cambios pendientes aparecen junto a la comparación.
+- En la vista lado a lado, las marcas del minimapa muestran dónde están los cambios dentro del archivo y permiten saltar directamente a uno.
+- Copiar texto y Descargar .txt se habilitan cuando todas las decisiones están resueltas.

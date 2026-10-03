@@ -5,14 +5,14 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
 const encoder = new TextEncoder();
 const state = {
-  sections: [], decisions: [], comments: {}, globalComment: '',
+  sections: [], decisions: [], activeHunk: 0,
   mode: 'split', leftName: 'Versión original', rightName: 'Versión nueva',
   error: '', compared: false,
 };
 
 document.querySelector('#app').innerHTML = `
   <header class="topbar">
-    <a class="brand" href="#" aria-label="Entre líneas, inicio"><span class="brand-mark" aria-hidden="true">↔</span><span>entre<span class="brand-light">líneas</span></span></a>
+    <a class="brand" href="#" aria-label="DIFF Studio, inicio"><span class="brand-mark" aria-hidden="true">↔</span><span>DIFF<span class="brand-light"> Studio</span></span></a>
     <span class="privacy-pill"><span class="privacy-dot"></span>Local</span>
   </header>
   <main>
@@ -34,7 +34,7 @@ document.querySelector('#app').innerHTML = `
     <div class="action-row"><p class="local-note">Tus textos no salen de este dispositivo.</p><button class="primary-button" id="compare-button">Comparar</button></div>
     <p id="error-message" class="error-message" role="alert" hidden></p>
     <section id="results" hidden aria-live="polite"></section>
-    <footer><span>ENTRE LÍNEAS <span class="footer-sep">/</span> UNA HERRAMIENTA LOCAL</span><a href="https://github.com" target="_blank" rel="noreferrer">Hecho para pensar con claridad <span aria-hidden="true">↗</span></a></footer>
+    <footer><span>DIFF STUDIO <span class="footer-sep">/</span> UNA HERRAMIENTA LOCAL</span><a href="https://github.com/CornFlaekk/diff-studio" target="_blank" rel="noreferrer">Código en GitHub <span aria-hidden="true">↗</span></a></footer>
   </main>`;
 
 const el = (id) => document.getElementById(id);
@@ -112,12 +112,8 @@ function renderAlignedDiff() {
       : '';
     return `<div class="${rowClass}"${hunk}>${cell('left', row.left, row.leftNo)}${cell('right', row.right, row.rightNo)}</div>${choice}`;
   }).join('');
-  return `<div class="file-diff"><div class="diff-file-head"><div>${escapeHtml(state.leftName)} <span>ORIGINAL</span></div><div>${escapeHtml(state.rightName)} <span>NUEVA</span></div></div><div class="diff-file-body">${rendered || '<div class="diff-no-lines">No hay líneas para mostrar.</div>'}</div></div>`;
-}
-
-function renderHunk(section, index) {
-  const hunkNumber = state.sections.slice(0, index + 1).filter((part) => part.type === 'hunk').length;
-  return `<div class="hunk-note" data-hunk="${index}"><label class="comment-label" for="comment-${index}">NOTA · CAMBIO ${String(hunkNumber).padStart(2, '0')} <span>· OPCIONAL</span></label><textarea class="comment-input" id="comment-${index}" data-comment="${index}" rows="2" placeholder="Añade una nota a este cambio…">${escapeHtml(state.comments[index] || '')}</textarea></div>`;
+  const markers = hunkSectionIndices.map((index, hunkIndex) => `<button class="diff-overview-marker ${state.decisions[index] ? 'resolved' : 'pending'}" data-nav-hunk="${index}" aria-label="Ir al cambio ${hunkIndex + 1}" title="Cambio ${hunkIndex + 1}"></button>`).join('');
+  return `<div class="file-diff"><div class="diff-file-head"><div>${escapeHtml(state.leftName)} <span>ORIGINAL</span></div><div>${escapeHtml(state.rightName)} <span>NUEVA</span></div></div><div class="diff-viewport"><div class="diff-file-body">${rendered || '<div class="diff-no-lines">No hay líneas para mostrar.</div>'}</div><div class="diff-overview" aria-label="Ubicación de los cambios en el fichero">${markers}</div></div></div>`;
 }
 
 function renderUnifiedDiff() {
@@ -125,7 +121,7 @@ function renderUnifiedDiff() {
   return `<div class="unified-file-diff">${state.sections.map((section, index) => {
     if (section.type === 'equal') return `<div class="unified-line"> ${safeText(section.value)}</div>`;
     hunkNumber += 1;
-    return `${renderHunkChoice(index, hunkNumber)}${section.left ? `<div class="unified-line removed">− ${safeText(section.left)}</div>` : ''}${section.right ? `<div class="unified-line added">＋ ${safeText(section.right)}</div>` : ''}`;
+    return `${section.left ? `<div class="unified-line removed">− ${safeText(section.left)}</div>` : ''}${section.right ? `<div class="unified-line added">＋ ${safeText(section.right)}</div>` : ''}${renderHunkChoice(index, hunkNumber)}`;
   }).join('')}</div>`;
 }
 
@@ -134,30 +130,73 @@ function renderResult() {
   if (!state.compared) { target.hidden = true; return; }
   target.hidden = false;
   const hunkSectionIndices = state.sections.flatMap((section, index) => section.type === 'hunk' ? [index] : []);
-  const hunks = state.sections.map((section, index) => section.type === 'hunk' ? renderHunk(section, index) : '').join('');
   const changes = hunkSectionIndices.length;
   const unresolved = unresolvedCount(state.sections, state.decisions);
   const merged = assemble(state.sections, state.decisions);
-  const statusText = changes ? `${changes} ${changes === 1 ? 'cambio' : 'cambios'} · ${unresolved ? `${unresolved} sin resolver` : 'todo resuelto'}` : 'Los textos son idénticos';
+  const statusText = changes ? `${unresolved} pendientes de ${changes} cambios` : 'Los textos son idénticos';
   target.innerHTML = `
     <div class="results-heading"><h2>Resultado</h2><div class="summary-badge ${unresolved ? 'pending' : 'complete'}"><span class="summary-dot"></span>${statusText}</div></div>
-    <div class="toolbar"><div class="mode-switch" role="group" aria-label="Modo de visualización"><button data-mode="split" class="${state.mode === 'split' ? 'active' : ''}" aria-pressed="${state.mode === 'split'}">Lado a lado</button><button data-mode="unified" class="${state.mode === 'unified' ? 'active' : ''}" aria-pressed="${state.mode === 'unified'}">Unificado</button></div><span class="toolbar-hint">${unresolved ? 'Resuelve cada cambio para completar la combinación' : 'La combinación está lista'}</span></div>
-    ${changes ? `${state.mode === 'split' ? renderAlignedDiff() : renderUnifiedDiff()}<div class="hunk-list">${hunks}</div>` : '<div class="identical-card"><span>✓</span><div><strong>No hay diferencias</strong><p>Las dos versiones contienen exactamente el mismo texto.</p></div></div>'}
-    <section class="merge-card"><div class="merge-heading"><div><span class="eyebrow-line"></span><span class="mini-label">RESULTADO COMBINADO</span><h3>Tu versión final</h3></div><button class="download-button" id="download-button" ${unresolved ? 'disabled title="Resuelve todos los cambios antes de descargar"' : ''}>↓ <span>Descargar .txt</span></button></div>${unresolved ? `<div class="unresolved-note">${unresolved} ${unresolved === 1 ? 'cambio espera' : 'cambios esperan'} tu decisión. El resultado se actualizará aquí.</div>` : ''}<pre class="merged-preview" tabindex="0" aria-label="Vista previa del texto combinado">${merged ? safeText(merged) : '<span class="preview-placeholder">La vista previa aparecerá aquí.</span>'}</pre><div class="merge-foot"><span>${lineCount(merged).toLocaleString('es')} líneas en la combinación</span><span>Solo en este dispositivo</span></div></section>
-    <section class="notes-card"><div class="notes-heading"><div><span class="mini-label">CONTEXTO ADICIONAL</span><h3>Notas de revisión</h3></div><button class="export-button" id="export-button">↓ Exportar notas .md</button></div><label class="comment-label" for="global-comment">NOTA GENERAL <span>· OPCIONAL</span></label><textarea class="comment-input global-comment" id="global-comment" rows="3" placeholder="Contexto para toda la revisión…">${escapeHtml(state.globalComment)}</textarea><p class="notes-foot">Las notas se incluyen en la exportación Markdown; no se guardan ni se envían.</p></section>`;
+    <div class="toolbar"><div class="mode-switch" role="group" aria-label="Modo de visualización"><button data-mode="split" class="${state.mode === 'split' ? 'active' : ''}" aria-pressed="${state.mode === 'split'}">Lado a lado</button><button data-mode="unified" class="${state.mode === 'unified' ? 'active' : ''}" aria-pressed="${state.mode === 'unified'}">Unificado</button></div>${changes ? `<div class="change-navigation"><button id="previous-change" aria-label="Cambio anterior" ${state.activeHunk <= 0 ? 'disabled' : ''}>↑ Anterior</button><span id="change-position">Cambio ${Math.min(state.activeHunk + 1, changes)} de ${changes}</span><button id="next-change" aria-label="Siguiente cambio" ${state.activeHunk >= changes - 1 ? 'disabled' : ''}>Siguiente ↓</button></div>` : ''}<span class="toolbar-hint">${unresolved ? `${unresolved} pendientes · resuélvelos para completar la combinación` : 'La combinación está lista'}</span></div>
+    ${changes ? state.mode === 'split' ? renderAlignedDiff() : renderUnifiedDiff() : '<div class="identical-card"><span>✓</span><div><strong>No hay diferencias</strong><p>Las dos versiones contienen exactamente el mismo texto.</p></div></div>'}
+    <section class="merge-card"><div class="merge-heading"><div><span class="eyebrow-line"></span><span class="mini-label">RESULTADO COMBINADO</span><h3>Tu versión final</h3></div><div class="merge-actions"><button class="copy-button" id="copy-button" ${unresolved ? 'disabled title="Resuelve todos los cambios antes de copiar"' : ''}>▣ <span>Copiar texto</span></button><button class="download-button" id="download-button" ${unresolved ? 'disabled title="Resuelve todos los cambios antes de descargar"' : ''}>↓ <span>Descargar .txt</span></button></div></div>${unresolved ? `<div class="unresolved-note">${unresolved} ${unresolved === 1 ? 'cambio espera' : 'cambios esperan'} tu decisión. El resultado se actualizará aquí.</div>` : ''}<pre class="merged-preview" tabindex="0" aria-label="Vista previa del texto combinado">${merged ? safeText(merged) : '<span class="preview-placeholder">La vista previa aparecerá aquí.</span>'}</pre><div class="merge-foot"><span>${lineCount(merged).toLocaleString('es')} líneas en la combinación</span><span id="copy-status" aria-live="polite">Solo en este dispositivo</span></div></section>`;
 
   target.querySelectorAll('[data-choice]').forEach((button) => button.addEventListener('click', () => {
     const index = Number(button.closest('[data-hunk]').dataset.hunk);
     const choice = button.dataset.choice;
     state.decisions[index] = choice === 'clear' || state.decisions[index] === choice ? null : choice;
+    const scrollTop = target.querySelector('.diff-file-body')?.scrollTop;
     renderResult();
+    const refreshedBody = target.querySelector('.diff-file-body');
+    if (refreshedBody && scrollTop !== undefined) refreshedBody.scrollTop = scrollTop;
     target.querySelector(`[data-hunk="${index}"] .choice-button[data-choice="${choice === 'left' ? 'left' : 'right'}"]`)?.focus();
   }));
-  target.querySelectorAll('[data-comment]').forEach((textarea) => textarea.addEventListener('input', () => { state.comments[textarea.dataset.comment] = textarea.value; }));
   target.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => { state.mode = button.dataset.mode; renderResult(); target.querySelector(`[data-mode="${state.mode}"]`).focus(); }));
-  el('global-comment').addEventListener('input', (event) => { state.globalComment = event.target.value; });
+  target.querySelectorAll('[data-nav-hunk]').forEach((button) => button.addEventListener('click', () => goToHunk(Number(button.dataset.navHunk))));
+  el('previous-change')?.addEventListener('click', () => goToHunk(state.activeHunk - 1));
+  el('next-change')?.addEventListener('click', () => goToHunk(state.activeHunk + 1));
   el('download-button')?.addEventListener('click', downloadMerge);
-  el('export-button').addEventListener('click', exportNotes);
+  el('copy-button')?.addEventListener('click', copyMerge);
+  updateOverviewMarkers();
+}
+
+function goToHunk(index) {
+  const hunkIndices = state.sections.flatMap((section, sectionIndex) => section.type === 'hunk' ? [sectionIndex] : []);
+  if (index < 0 || index >= hunkIndices.length) return;
+  state.activeHunk = index;
+  const marker = el('results').querySelector(`.diff-hunk-marker[data-hunk="${hunkIndices[index]}"]`);
+  marker?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el('change-position').textContent = `Cambio ${index + 1} de ${hunkIndices.length}`;
+  el('previous-change').disabled = index === 0;
+  el('next-change').disabled = index === hunkIndices.length - 1;
+}
+
+function updateOverviewMarkers() {
+  const body = el('results').querySelector('.diff-file-body');
+  const track = el('results').querySelector('.diff-overview');
+  if (!body || !track) return;
+  const markers = [...track.querySelectorAll('[data-nav-hunk]')];
+  const place = () => {
+    const scale = body.scrollHeight ? 100 / body.scrollHeight : 0;
+    markers.forEach((button) => {
+      const marker = body.querySelector(`.diff-hunk-marker[data-hunk="${button.dataset.navHunk}"]`);
+      if (marker) button.style.top = `${marker.offsetTop * scale}%`;
+    });
+  };
+  place();
+  body.addEventListener('scroll', () => {
+    place();
+    const hunkIndices = state.sections.flatMap((section, index) => section.type === 'hunk' ? [index] : []);
+    let visible = 0;
+    hunkIndices.forEach((index, ordinal) => {
+      const marker = body.querySelector(`.diff-hunk-marker[data-hunk="${index}"]`);
+      if (marker && marker.offsetTop <= body.scrollTop + body.clientHeight * 0.45) visible = ordinal;
+    });
+    state.activeHunk = visible;
+    const position = el('change-position');
+    if (position) position.textContent = `Cambio ${visible + 1} de ${hunkIndices.length}`;
+    const previous = el('previous-change'), next = el('next-change');
+    if (previous && next) { previous.disabled = visible === 0; next.disabled = visible === hunkIndices.length - 1; }
+  }, { passive: true });
 }
 
 function download(name, content, type) {
@@ -172,19 +211,20 @@ function downloadMerge() {
   download('texto-combinado.txt', assemble(state.sections, state.decisions), 'text/plain;charset=utf-8');
 }
 
-function exportNotes() {
-  const rows = ['# Notas de revisión', '', `- Original: ${state.leftName}`, `- Nueva: ${state.rightName}`, ''];
-  if (state.globalComment.trim()) rows.push('## Nota general', '', state.globalComment.trim(), '');
-  let hunkNumber = 0;
-  state.sections.forEach((section, index) => {
-    if (section.type !== 'hunk') return;
-    hunkNumber += 1;
-    const comment = state.comments[index]?.trim();
-    if (!comment) return;
-    rows.push(`## Cambio ${hunkNumber}`, '', `**Decisión:** ${state.decisions[index] === 'left' ? 'Conservar original' : state.decisions[index] === 'right' ? 'Conservar nueva' : 'Sin resolver'}`, '', comment, '');
-  });
-  if (!state.globalComment.trim() && !Object.values(state.comments).some((comment) => comment.trim())) rows.push('_No se añadieron notas._', '');
-  download('notas-de-revision.md', rows.join('\n'), 'text/markdown;charset=utf-8');
+async function copyMerge() {
+  if (unresolvedCount(state.sections, state.decisions)) return;
+  const content = assemble(state.sections, state.decisions);
+  try {
+    await navigator.clipboard.writeText(content);
+    el('copy-status').textContent = 'Texto copiado al portapapeles';
+  } catch {
+    const temporary = document.createElement('textarea');
+    temporary.value = content;
+    temporary.style.position = 'fixed'; temporary.style.opacity = '0';
+    document.body.append(temporary); temporary.select();
+    const copied = document.execCommand('copy'); temporary.remove();
+    el('copy-status').textContent = copied ? 'Texto copiado al portapapeles' : 'No se pudo copiar el texto';
+  }
 }
 
 el('compare-button').addEventListener('click', () => {
@@ -197,7 +237,7 @@ el('compare-button').addEventListener('click', () => {
   }
   state.sections = buildSections(left, right);
   state.decisions = [];
-  state.comments = {};
+  state.activeHunk = 0;
   state.compared = true;
   renderResult();
   el('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
