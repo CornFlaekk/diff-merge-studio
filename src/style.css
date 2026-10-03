@@ -18,3 +18,7 @@
 .hunk-note .comment-label{margin:0;font-size:9px}
 .hunk-note .comment-input{width:100%;margin:0;padding:6px 8px;min-height:31px}
 @media(max-width:720px){.diff-hunk-marker{padding:7px 6px}.diff-hunk-options{gap:5px}.diff-hunk-options .choice-button{min-width:0;padding:7px 9px}.hunk-note{grid-template-columns:1fr;gap:4px;padding:7px}.hunk-note .comment-input{margin:0}}
+.diff-file-body{overflow-x:hidden}
+.diff-row{min-width:100%}
+.diff-cell code{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:visible}
+@media(max-width:720px){.diff-row{min-width:100%}}
