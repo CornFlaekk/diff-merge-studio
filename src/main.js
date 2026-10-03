@@ -1,4 +1,4 @@
-import { assemble, buildSections, lineCount, unresolvedCount } from './diff-logic.js';
+import { assemble, buildAlignedRows, buildSections, lineCount, unresolvedCount } from './diff-logic.js';
 import './style.css';
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -13,29 +13,25 @@ const state = {
 document.querySelector('#app').innerHTML = `
   <header class="topbar">
     <a class="brand" href="#" aria-label="Entre líneas, inicio"><span class="brand-mark" aria-hidden="true">↔</span><span>entre<span class="brand-light">líneas</span></span></a>
-    <span class="privacy-pill"><span class="privacy-dot"></span>Privado por diseño</span>
+    <span class="privacy-pill"><span class="privacy-dot"></span>Local</span>
   </header>
   <main>
-    <section class="hero">
-      <div class="eyebrow"><span class="eyebrow-line"></span>COMPARA · DECIDE · COMBINA</div>
-      <h1>Dos versiones.<br /><em>Una decisión clara.</em></h1>
-      <p>Compara textos línea a línea, elige qué conservar en cada cambio y crea tu versión final. Todo sucede en este navegador.</p>
-    </section>
+    <section class="hero"><h1>Comparar archivos</h1></section>
 
     <section class="input-grid" aria-label="Textos para comparar">
       <article class="input-card">
-        <div class="card-head"><label for="left-text">01 <span>VERSIÓN ORIGINAL</span></label><span class="file-badge" id="left-file-label">Texto pegado</span></div>
-        <textarea id="left-text" spellcheck="false" placeholder="Pega aquí el primer texto…" aria-label="Texto de la versión original"></textarea>
-        <div class="input-foot"><span id="left-count">0 líneas</span><label class="file-button" for="left-file">＋ Elegir archivo<input id="left-file" type="file" accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.yml,.yaml,.log,text/*" /></label></div>
+        <div class="card-head"><label for="left-text">ORIGINAL</label><span class="file-badge" id="left-file-label">Pegar texto</span></div>
+        <textarea id="left-text" spellcheck="false" placeholder="Pega aquí el texto original…" aria-label="Texto de la versión original"></textarea>
+        <div class="input-foot"><span id="left-count">0 líneas</span><label class="file-button" for="left-file">Abrir archivo<input id="left-file" type="file" accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.yml,.yaml,.log,text/*" /></label></div>
       </article>
       <article class="input-card">
-        <div class="card-head"><label for="right-text">02 <span>VERSIÓN NUEVA</span></label><span class="file-badge" id="right-file-label">Texto pegado</span></div>
-        <textarea id="right-text" spellcheck="false" placeholder="Pega aquí la segunda versión…" aria-label="Texto de la versión nueva"></textarea>
-        <div class="input-foot"><span id="right-count">0 líneas</span><label class="file-button" for="right-file">＋ Elegir archivo<input id="right-file" type="file" accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.yml,.yaml,.log,text/*" /></label></div>
+        <div class="card-head"><label for="right-text">NUEVO</label><span class="file-badge" id="right-file-label">Pegar texto</span></div>
+        <textarea id="right-text" spellcheck="false" placeholder="Pega aquí el texto nuevo…" aria-label="Texto de la versión nueva"></textarea>
+        <div class="input-foot"><span id="right-count">0 líneas</span><label class="file-button" for="right-file">Abrir archivo<input id="right-file" type="file" accept=".txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.yml,.yaml,.log,text/*" /></label></div>
       </article>
     </section>
 
-    <div class="action-row"><p class="local-note"><span aria-hidden="true">◉</span> Sin cargas ni cuentas. Tus textos no salen del dispositivo.</p><button class="primary-button" id="compare-button">Comparar versiones <span aria-hidden="true">→</span></button></div>
+    <div class="action-row"><p class="local-note">Tus textos no salen de este dispositivo.</p><button class="primary-button" id="compare-button">Comparar</button></div>
     <p id="error-message" class="error-message" role="alert" hidden></p>
     <section id="results" hidden aria-live="polite"></section>
     <footer><span>ENTRE LÍNEAS <span class="footer-sep">/</span> UNA HERRAMIENTA LOCAL</span><a href="https://github.com" target="_blank" rel="noreferrer">Hecho para pensar con claridad <span aria-hidden="true">↗</span></a></footer>
@@ -99,11 +95,20 @@ function classifyHunk(hunk) {
   return 'change';
 }
 
-function renderCode(text, kind, emptyText) {
-  const lines = text ? text.split(/(?<=\n)/) : [];
-  if (lines.length && lines.at(-1) === '') lines.pop();
-  if (!lines.length) return `<div class="code-empty">${escapeHtml(emptyText)}</div>`;
-  return `<ol class="code-lines ${kind}">${lines.map((line) => `<li><code>${safeText(line.replace(/\n$/, '')) || '&nbsp;'}</code></li>`).join('')}</ol>`;
+function renderAlignedDiff() {
+  const hunkSectionIndices = state.sections.flatMap((section, index) => section.type === 'hunk' ? [index] : []);
+  const rows = buildAlignedRows(leftInput.value, rightInput.value);
+  let lastHunk = null;
+  const rendered = rows.map((row) => {
+    const hunk = row.hunkId === null ? '' : ` data-hunk-id="${row.hunkId}"`;
+    const decision = row.hunkId === null ? null : state.decisions[hunkSectionIndices[row.hunkId]];
+    const rowClass = `diff-row ${row.type}${decision ? ` chosen choice-${decision}` : ''}`;
+    const cell = (side, text, number) => `<div class="diff-cell ${side} ${row.type === 'equal' ? '' : row.type === 'change' ? (side === 'left' ? 'removed' : 'added') : row.type === (side === 'left' ? 'delete' : 'add') ? (side === 'left' ? 'removed' : 'added') : ''}"><span class="line-number">${number ?? ''}</span><code>${text === null ? '' : safeText(text.replace(/\n$/, '')) || '&nbsp;'}</code></div>`;
+    const marker = row.hunkId !== null && row.hunkId !== lastHunk ? `<div class="diff-hunk-marker" aria-hidden="true">Cambio ${String(row.hunkId + 1).padStart(2, '0')}</div>` : '';
+    if (row.hunkId !== null) lastHunk = row.hunkId;
+    return `${marker}<div class="${rowClass}"${hunk}>${cell('left', row.left, row.leftNo)}${cell('right', row.right, row.rightNo)}</div>`;
+  }).join('');
+  return `<div class="file-diff"><div class="diff-file-head"><div>${escapeHtml(state.leftName)} <span>ORIGINAL</span></div><div>${escapeHtml(state.rightName)} <span>NUEVA</span></div></div><div class="diff-file-body">${rendered || '<div class="diff-no-lines">No hay líneas para mostrar.</div>'}</div></div>`;
 }
 
 function renderHunk(section, index) {
@@ -114,13 +119,8 @@ function renderHunk(section, index) {
   const leftLines = lineCount(section.left);
   const rightLines = lineCount(section.right);
   const status = choice ? (choice === 'left' ? 'Conserva original' : 'Conserva nueva') : 'Sin resolver';
-  const pane = (side, name, text) => `<div class="compare-pane ${choice === side ? 'chosen' : ''}"><div class="pane-label"><span>${escapeHtml(name)}</span><span>${lineCount(text)} ${lineCount(text) === 1 ? 'línea' : 'líneas'}</span></div>${renderCode(text, side === 'left' ? 'removed' : 'added', side === 'left' ? 'Sin líneas en original' : 'Sin líneas en nueva')}</div>`;
-  const content = state.mode === 'split'
-    ? `<div class="diff-split">${pane('left', state.leftName, section.left)}${pane('right', state.rightName, section.right)}</div>`
-    : `<div class="diff-unified">${section.left ? `<div class="unified-line removed"><span aria-label="Eliminada">−</span>${safeText(section.left)}</div>` : ''}${section.right ? `<div class="unified-line added"><span aria-label="Añadida">＋</span>${safeText(section.right)}</div>` : ''}</div>`;
   return `<article class="hunk ${type}" data-hunk="${index}">
     <header class="hunk-head"><div><span class="hunk-number">CAMBIO ${String(hunkNumber).padStart(2, '0')}</span><strong>${title}</strong></div><span class="hunk-state ${choice ? 'resolved' : ''}">${choice ? '✓ ' : '○ '}${status}</span></header>
-    ${content}
     <div class="hunk-controls"><span class="choose-label">CONSERVAR</span><button class="choice-button ${choice === 'left' ? 'selected' : ''}" data-choice="left" aria-pressed="${choice === 'left'}" aria-label="En el cambio ${hunkNumber}: conservar la versión original">← Original <span>${leftLines} ${leftLines === 1 ? 'línea' : 'líneas'}</span></button><button class="choice-button ${choice === 'right' ? 'selected' : ''}" data-choice="right" aria-pressed="${choice === 'right'}" aria-label="En el cambio ${hunkNumber}: conservar la versión nueva">Nueva → <span>${rightLines} ${rightLines === 1 ? 'línea' : 'líneas'}</span></button><button class="clear-choice" data-choice="clear" aria-label="Dejar el cambio ${hunkNumber} sin resolver">Deshacer elección</button></div>
     <label class="comment-label" for="comment-${index}">NOTA PARA ESTE CAMBIO <span>· OPCIONAL</span></label><textarea class="comment-input" id="comment-${index}" data-comment="${index}" rows="2" placeholder="Añade contexto o una pregunta…">${escapeHtml(state.comments[index] || '')}</textarea>
   </article>`;
@@ -130,15 +130,16 @@ function renderResult() {
   const target = el('results');
   if (!state.compared) { target.hidden = true; return; }
   target.hidden = false;
+  const hunkSectionIndices = state.sections.flatMap((section, index) => section.type === 'hunk' ? [index] : []);
   const hunks = state.sections.map((section, index) => section.type === 'hunk' ? renderHunk(section, index) : '').join('');
-  const changes = state.sections.filter((section) => section.type === 'hunk').length;
+  const changes = hunkSectionIndices.length;
   const unresolved = unresolvedCount(state.sections, state.decisions);
   const merged = assemble(state.sections, state.decisions);
   const statusText = changes ? `${changes} ${changes === 1 ? 'cambio' : 'cambios'} · ${unresolved ? `${unresolved} sin resolver` : 'todo resuelto'}` : 'Los textos son idénticos';
   target.innerHTML = `
-    <div class="results-heading"><div><div class="eyebrow"><span class="eyebrow-line"></span>REVISIÓN DE CAMBIOS</div><h2>Elige lo que <em>se queda.</em></h2></div><div class="summary-badge ${unresolved ? 'pending' : 'complete'}"><span class="summary-dot"></span>${statusText}</div></div>
+    <div class="results-heading"><h2>Resultado</h2><div class="summary-badge ${unresolved ? 'pending' : 'complete'}"><span class="summary-dot"></span>${statusText}</div></div>
     <div class="toolbar"><div class="mode-switch" role="group" aria-label="Modo de visualización"><button data-mode="split" class="${state.mode === 'split' ? 'active' : ''}" aria-pressed="${state.mode === 'split'}">Lado a lado</button><button data-mode="unified" class="${state.mode === 'unified' ? 'active' : ''}" aria-pressed="${state.mode === 'unified'}">Unificado</button></div><span class="toolbar-hint">${unresolved ? 'Resuelve cada cambio para completar la combinación' : 'La combinación está lista'}</span></div>
-    ${changes ? `<div class="hunk-list">${hunks}</div>` : '<div class="identical-card"><span>✓</span><div><strong>No hay diferencias</strong><p>Las dos versiones contienen exactamente el mismo texto.</p></div></div>'}
+    ${changes ? `${state.mode === 'split' ? renderAlignedDiff() : `<div class="unified-file-diff">${state.sections.map((section) => section.type === 'equal' ? `<div class="unified-line"> ${safeText(section.value)}</div>` : `${section.left ? `<div class="unified-line removed">− ${safeText(section.left)}</div>` : ''}${section.right ? `<div class="unified-line added">＋ ${safeText(section.right)}</div>` : ''}`).join('')}</div>`}<div class="hunk-list">${hunks}</div>` : '<div class="identical-card"><span>✓</span><div><strong>No hay diferencias</strong><p>Las dos versiones contienen exactamente el mismo texto.</p></div></div>'}
     <section class="merge-card"><div class="merge-heading"><div><span class="eyebrow-line"></span><span class="mini-label">RESULTADO COMBINADO</span><h3>Tu versión final</h3></div><button class="download-button" id="download-button" ${unresolved ? 'disabled title="Resuelve todos los cambios antes de descargar"' : ''}>↓ <span>Descargar .txt</span></button></div>${unresolved ? `<div class="unresolved-note">${unresolved} ${unresolved === 1 ? 'cambio espera' : 'cambios esperan'} tu decisión. El resultado se actualizará aquí.</div>` : ''}<pre class="merged-preview" tabindex="0" aria-label="Vista previa del texto combinado">${merged ? safeText(merged) : '<span class="preview-placeholder">La vista previa aparecerá aquí.</span>'}</pre><div class="merge-foot"><span>${lineCount(merged).toLocaleString('es')} líneas en la combinación</span><span>Solo en este dispositivo</span></div></section>
     <section class="notes-card"><div class="notes-heading"><div><span class="mini-label">CONTEXTO ADICIONAL</span><h3>Notas de revisión</h3></div><button class="export-button" id="export-button">↓ Exportar notas .md</button></div><label class="comment-label" for="global-comment">NOTA GENERAL <span>· OPCIONAL</span></label><textarea class="comment-input global-comment" id="global-comment" rows="3" placeholder="Contexto para toda la revisión…">${escapeHtml(state.globalComment)}</textarea><p class="notes-foot">Las notas se incluyen en la exportación Markdown; no se guardan ni se envían.</p></section>`;
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assemble, buildSections, lineCount, unresolvedCount } from '../src/diff-logic.js';
+import { assemble, buildAlignedRows, buildSections, lineCount, unresolvedCount } from '../src/diff-logic.js';
 
 test('identical text is a single unchanged section', () => {
   const sections = buildSections('one\ntwo\n', 'one\ntwo\n');
@@ -32,4 +32,15 @@ test('handles empty strings and final lines without a newline', () => {
   assert.equal(lineCount('a\nb\n'), 2);
   assert.equal(lineCount('a\nb'), 2);
   assert.equal(lineCount(''), 0);
+});
+
+
+test('builds aligned split rows and independent line numbers around insertions', () => {
+  const rows = buildAlignedRows('one\nold\nthree\n', 'one\nnew\nextra\nthree\n');
+  assert.deepEqual(rows.map(({ type, left, right, leftNo, rightNo, hunkId }) => ({ type, left, right, leftNo, rightNo, hunkId })), [
+    { type: 'equal', left: 'one\n', right: 'one\n', leftNo: 1, rightNo: 1, hunkId: null },
+    { type: 'change', left: 'old\n', right: 'new\n', leftNo: 2, rightNo: 2, hunkId: 0 },
+    { type: 'add', left: null, right: 'extra\n', leftNo: null, rightNo: 3, hunkId: 0 },
+    { type: 'equal', left: 'three\n', right: 'three\n', leftNo: 3, rightNo: 4, hunkId: null },
+  ]);
 });
