@@ -101,15 +101,16 @@ function renderHunkChoice(sectionIndex, hunkNumber) {
 function renderAlignedDiff() {
   const hunkSectionIndices = state.sections.flatMap((section, index) => section.type === 'hunk' ? [index] : []);
   const rows = buildAlignedRows(leftInput.value, rightInput.value);
-  let lastHunk = null;
-  const rendered = rows.map((row) => {
+  const rendered = rows.map((row, rowIndex) => {
     const hunk = row.hunkId === null ? '' : ` data-hunk-id="${row.hunkId}"`;
     const decision = row.hunkId === null ? null : state.decisions[hunkSectionIndices[row.hunkId]];
     const rowClass = `diff-row ${row.type}${decision ? ` chosen choice-${decision}` : ''}`;
     const cell = (side, text, number) => `<div class="diff-cell ${side} ${row.type === 'equal' ? '' : row.type === 'change' ? (side === 'left' ? 'removed' : 'added') : row.type === (side === 'left' ? 'delete' : 'add') ? (side === 'left' ? 'removed' : 'added') : ''}"><span class="line-number">${number ?? ''}</span><code>${text === null ? '' : safeText(text.replace(/\n$/, '')) || '&nbsp;'}</code></div>`;
-    const marker = row.hunkId !== null && row.hunkId !== lastHunk ? renderHunkChoice(hunkSectionIndices[row.hunkId], row.hunkId + 1) : '';
-    if (row.hunkId !== null) lastHunk = row.hunkId;
-    return `${marker}<div class="${rowClass}"${hunk}>${cell('left', row.left, row.leftNo)}${cell('right', row.right, row.rightNo)}</div>`;
+    const nextRow = rows[rowIndex + 1];
+    const choice = row.hunkId !== null && nextRow?.hunkId !== row.hunkId
+      ? renderHunkChoice(hunkSectionIndices[row.hunkId], row.hunkId + 1)
+      : '';
+    return `<div class="${rowClass}"${hunk}>${cell('left', row.left, row.leftNo)}${cell('right', row.right, row.rightNo)}</div>${choice}`;
   }).join('');
   return `<div class="file-diff"><div class="diff-file-head"><div>${escapeHtml(state.leftName)} <span>ORIGINAL</span></div><div>${escapeHtml(state.rightName)} <span>NUEVA</span></div></div><div class="diff-file-body">${rendered || '<div class="diff-no-lines">No hay líneas para mostrar.</div>'}</div></div>`;
 }
